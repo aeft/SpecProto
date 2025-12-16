@@ -1,0 +1,321 @@
+#include "{{ header_file_name }}"
+
+namespace {{ namespace }} {
+
+bool BuildSubtask(ByteStream& bs, std::map<uint32_t, std::vector<range>>& batch, std::unordered_set<uint32_t>& valid_tags) {
+    uint32_t curr_start = bs.curr;
+    uint32_t field_id, wire_type, len, tag;
+
+    while (!bs.Done()) {
+        if (!bs.ReadTag(tag)) {
+            return false;
+        }
+
+        if (!valid_tags.count(tag)) {
+            return false;
+        }
+
+        field_id = tag >> 3;
+        wire_type = tag & 7;
+
+        switch (wire_type) {
+            case 0:
+                if (!bs.ReadVarintLen(len)) {
+                    return false;
+                }
+                break;
+            case 1:
+                len = 8;
+                break;
+            case 2:
+                if (!bs.ReadLen(len)) {
+                    return false;
+                }
+                break;
+            case 5:
+                len = 4;
+                break;
+        }
+
+        batch[field_id].emplace_back(bs.curr, bs.curr + len);
+        bs.Skip(len);
+    }
+    return true;
+}
+{%- for message_name, fields in messages.items() %}
+
+{# constructor -#}
+{{ message_name }}::{{ message_name }}() {
+    {%- for field in fields %}
+    {%- set default_value = field.cpp_type_default_value %}
+    {%- if default_value is not none %}
+    this->{{ field.name }} = {{ default_value }};
+    {%- endif %}
+    {%- endfor %}
+}
+
+{# destructor -#}
+{{ message_name }}::~{{ message_name }}() {
+    {%- for field in fields %}
+    {%- if field.is_embedded_message %}
+    {%- if field.is_repeated %}
+    for (auto val : this->{{ field.name }}) delete val;
+    {%- else %}
+    delete this->{{ field.name }};
+    {%- endif %}
+    {%- endif %}
+    {%- endfor %}
+}
+
+{# Parse -#}
+bool {{ message_name }}::Parse(ByteStream& bs) {
+    uint32_t tag;
+    while (!bs.Done()) {
+        if (!bs.ReadTag(tag)) return false;
+
+        uint32_t field_id = tag >> 3;
+        uint32_t wire_type = tag & 7;
+
+        switch (field_id) {
+        {%- for field in fields %}
+            case {{ field.field_id }}:
+                {%- if field.proto_type in wiretype_to_prototype[0] %}
+                {%- if field.is_repeated %}
+                if (wire_type == 2) {
+                    uint32_t len;
+                    if (!bs.ReadLen(len)) return false;
+                    if (!bs.ReadPackedVarint(this->{{ field.name }}, len)) return false;
+                } else if (wire_type == 0) {
+                    {{ field.cpp_type_single }} tmp;
+                    if (!bs.ReadVarint(tmp)) return false;
+                    this->{{ field.name }}.push_back(tmp);
+                } else {
+                    return false;
+                }
+                {%- else %}
+                if (wire_type == 0) {
+                    if (!bs.ReadVarint(this->{{ field.name }})) return false;
+                } else {
+                    return false;
+                }
+                {%- endif %}
+
+                {%- elif field.proto_type in wiretype_to_prototype[1] %}
+                {%- if field.is_repeated %}
+                if (wire_type == 2) {
+                    uint32_t len;
+                    if (!bs.ReadLen(len)) return false;
+                    if (!bs.ReadPackedFixed(this->{{ field.name }}, len)) return false;
+                } else if (wire_type == 1) {
+                    {{ field.cpp_type_single }} tmp;
+                    if (!bs.ReadFixed(tmp)) return false;
+                    this->{{ field.name }}.push_back(tmp);
+                } else {
+                    return false;
+                }
+                {%- else %}
+                if (wire_type == 1) {
+                    if (!bs.ReadFixed(this->{{ field.name }})) return false;
+                } else {
+                    return false;
+                }
+                {%- endif %}
+
+                {%- elif field.proto_type in wiretype_to_prototype[5] %}
+                {%- if field.is_repeated %}
+                if (wire_type == 2) {
+                    uint32_t len;
+                    if (!bs.ReadLen(len)) return false;
+                    if (!bs.ReadPackedFixed(this->{{ field.name }}, len)) return false;
+                } else if (wire_type == 5) {
+                    {{ field.cpp_type_single }} tmp;
+                    if (!bs.ReadFixed(tmp)) return false;
+                    this->{{ field.name }}.push_back(tmp);
+                } else {
+                    return false;
+                }
+                {%- else %}
+                if (wire_type == 5) {
+                    if (!bs.ReadFixed(this->{{ field.name }})) return false;
+                } else {
+                    return false;
+                }
+                {%- endif %}
+
+                {%- elif field.proto_type in ["string", "bytes"] %}
+                if (wire_type == 2) {
+                    uint32_t len;
+                    if (!bs.ReadLen(len)) return false;
+                    std::string val;
+                    if (!bs.ReadString(val, len)) return false;
+                    {%- if field.is_repeated %}
+                    this->{{ field.name }}.push_back(std::move(val));
+                    {%- else %}
+                    this->{{ field.name }} = std::move(val);
+                    {%- endif %}
+                } else {
+                    return false;
+                }
+
+                {%- elif field.is_embedded_message %}
+                if (wire_type == 2) {
+                    uint32_t len;
+                    if (!bs.ReadLen(len)) return false;
+                    auto val = new {{ field.proto_type }}();
+                    ByteStream bs_tmp(bs.buffer, bs.curr, bs.curr + len);
+                    if (!val->Parse(bs_tmp)) return false;
+                    {%- if field.is_repeated %}
+                    this->{{ field.name }}.push_back(val);
+                    {%- else %}
+                    this->{{ field.name }} = val;
+                    {%- endif %}
+                    bs.Skip(len);
+                } else {
+                    return false;
+                }
+                {%- endif %}
+                break;
+        {%- endfor %}
+            default:
+                return false;
+        }
+    }
+    return true;
+}
+
+{# ParseInParallel -#}
+bool {{ message_name }}::ParseInParallel(ByteStream& bs) {
+    std::map<uint32_t, std::vector<range>> batch;
+
+    if (!BuildSubtask(bs, batch, ValidTags_{{ message_name }})) {
+        return false;
+    }
+
+    bool res = true;
+    {# parse_batch -#}
+    std::vector<uint32_t> fields;
+    fields.reserve(batch.size());
+    for (auto& [field_id, v] : batch) {
+        fields.push_back(field_id);
+    }
+    {# #pragma omp taskloop #}
+    for(int i = 0; i < fields.size(); i++) {
+        uint32_t field_id = fields[i];
+        auto& subtasks = batch[field_id];
+        switch (field_id) {
+        {%- for field in fields %}
+            case {{ field.field_id }}: {
+
+                {%- if field.proto_type in wiretype_to_prototype[0] %}
+                {%- if field.is_repeated %}
+                for (uint32_t j = 0; j < subtasks.size(); j++) {
+                    if (!ByteStream(bs.buffer, subtasks[j].first, subtasks[j].second).ReadPackedVarint(this->{{ field.name }})) {
+                        res = false;
+                        break;
+                    }
+                }
+                {%- else %}
+                if (!ByteStream(bs.buffer, subtasks.back().first, subtasks.back().second).ReadVarint(this->{{ field.name }})) res = false;
+                {%- endif %}
+
+                {%- elif field.proto_type in wiretype_to_prototype[1].union(wiretype_to_prototype[5]) %}
+                {%- if field.is_repeated %}
+                for (uint32_t j = 0; j < subtasks.size(); j++) {
+                    if (!ByteStream(bs.buffer, subtasks[j].first, subtasks[j].second).ReadPackedFixed(this->{{ field.name }})) {
+                        res = false;
+                        break;
+                    }
+                }
+                {%- else %}
+                if (!ByteStream(bs.buffer, subtasks.back().first, subtasks.back().second).ReadFixed(this->{{ field.name }})) res = false;
+                {%- endif %}
+
+                {%- elif field.proto_type in ["string", "bytes"] %}
+                {%- if field.is_repeated %}
+                this->{{ field.name }}.resize(subtasks.size());
+                #pragma omp taskloop
+                for(int j = 0; j < subtasks.size(); j++) {
+                    if (!ByteStream(bs.buffer, subtasks[j].first, subtasks[j].second).ReadString(this->{{ field.name }}[j])) {
+                        res = false;
+                    }
+                }
+                {%- else %}
+                if (!ByteStream(bs.buffer, subtasks.back().first, subtasks.back().second).ReadString(this->{{ field.name }})) res = false;
+                {%- endif %}
+
+                {%- elif field.is_embedded_message%}
+                {%- if field.is_repeated %}
+                this->{{ field.name }}.resize(subtasks.size());
+                #pragma omp taskloop
+                for(int j = 0; j < subtasks.size(); j++) {
+                    this->{{ field.name }}[j] = new {{ field.proto_type }}();
+                    ByteStream bs_tmp(bs.buffer, subtasks[j].first, subtasks[j].second);
+                    if (!this->{{ field.name }}[j]->Parse(bs_tmp)) {
+                        res = false;
+                    }
+                }
+
+                {%- else %}
+                this->{{ field.name }} = new {{ field.proto_type }}();
+                ByteStream bs_tmp(bs.buffer, subtasks.back().first, subtasks.back().second);
+                if (!this->{{ field.name }}->Parse(bs_tmp)) {
+                    res = false;
+                }
+                {%- endif %}
+
+                {%- endif %}
+                break;
+            }
+        {%- endfor %}
+            default: {
+                res = false;
+                break;
+            }
+        }
+    }
+
+    #pragma omp taskwait
+
+    return res;
+}
+
+{# ConvertToPB -#}
+PB::{{ message_name }}* {{ message_name }}::ConvertToPB(PB::{{ message_name }}* val) {
+    {%- for field in fields %}
+
+    {%- if field.proto_type in wiretype_to_prototype[0].union(wiretype_to_prototype[1]).union(wiretype_to_prototype[5]) %}
+    {%- if field.is_repeated %}
+    for (auto e : this->{{ field.name }}) {
+        val->add_{{ field.name.lower() }}(e);
+    }
+    {%- else %}
+    val->set_{{ field.name.lower() }}(this->{{ field.name }});
+    {%- endif %}
+
+    {%- elif field.proto_type in ["string", "bytes"] %}
+    {%- if field.is_repeated %}
+    for (auto& e : this->{{ field.name }}) {
+        val->add_{{ field.name.lower() }}(std::move(e));
+    }
+    {%- else %}
+    val->set_{{ field.name.lower() }}(std::move(this->{{ field.name }}));
+    {%- endif %}
+
+    {%- elif field.is_embedded_message %}
+    {%- if field.is_repeated %}
+    for (auto e : this->{{ field.name }}) {
+        e->ConvertToPB(val->add_{{ field.name.lower() }}());
+    }
+    {%- else %}
+    if (this->{{ field.name }} != nullptr) {
+        val->set_allocated_{{ field.name.lower() }}(this->{{ field.name }}->ConvertToPB(new PB::{{ field.proto_type }}()));
+    }
+    {%- endif %}
+    {%- endif %}
+    {%- endfor %}
+    return val;
+}
+
+{%- endfor %}
+
+}

@@ -1,0 +1,65 @@
+syntax = "proto3";
+
+package PB;
+
+message Map { repeated MapRecord records = 1; }
+
+message MapRecord {
+  repeated Routes routes = 1;
+  string status = 2;
+  repeated GeocodedWaypoints geocoded_waypoints = 3;
+}
+
+message OverviewPolyline { string points = 1; }
+
+message Bounds {
+  Location northeast = 1;
+  Location southwest = 2;
+}
+
+message Polyline { string points = 1; }
+
+message Steps {
+  string html_instructions = 1;
+  Info distance = 2;
+  string travel_mode = 3;
+  Location start_location = 4;
+  Polyline polyline = 5;
+  Info duration = 6;
+  Location end_location = 7;
+}
+
+message Legs {
+  Info distance = 1;
+  string end_address = 2;
+  string start_address = 3;
+  Location start_location = 4;
+  repeated Steps steps = 5;
+  Info duration = 6;
+  Location end_location = 7;
+}
+
+message Routes {
+  OverviewPolyline overview_polyline = 1;
+  repeated string warnings = 2;
+  Bounds bounds = 3;
+  string summary = 4;
+  string copyrights = 5;
+  repeated Legs legs = 6;
+}
+
+message GeocodedWaypoints {
+  string place_id = 1;
+  string geocoder_status = 2;
+  repeated string types = 3;
+}
+
+message Info {
+  string text = 1;
+  uint32 value = 2;
+}
+
+message Location {
+  double lat = 1;
+  double lng = 2;
+}

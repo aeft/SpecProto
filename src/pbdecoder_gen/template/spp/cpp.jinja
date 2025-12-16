@@ -1,0 +1,723 @@
+#include "{{ header_file_name }}"
+
+namespace {{ namespace }} {
+
+#ifdef COUNT_REDO_BYTES
+uint32_t stat_redo_bytes = 0;
+#endif
+
+bool {{ main_message_name }}::ParsePartial(ByteStream& bs, std::vector<IR>& irs,
+                         std::vector<FallbackInfo>& fallback,
+                         std::deque<TagInfo>& last_tags, uint32_t end_of_block) {
+    uint32_t curr_start;
+    uint32_t tag, next_tag;
+    PType *pcur, *pend;
+
+    if (fallback.empty()) {
+        curr_start = bs.curr;
+
+        if (!bs.ReadTag(tag)) return false;
+
+        if (!CandidatesInit.count(tag) or CandidatesInit[tag].empty())
+            return false;
+
+        pcur = CandidatesInit[tag].data();
+        pend = pcur + CandidatesInit[tag].size();
+    } else {
+        auto info = fallback.back();
+
+        pcur = info.pcur + 1;
+        pend = info.pend;
+        bs.curr = info.start;
+        curr_start = bs.curr;
+
+        ASSERT_WITH_MSG(bs.ReadTag(tag) > 0, "tag should be greater than 0");
+
+        ASSERT_WITH_MSG(pcur < pend, "pcur should be less than pend");
+
+        irs.resize(info.fallback_pos);
+        fallback.pop_back();
+    }
+
+    PType* prev_pcur = nullptr;
+
+    while (true) {
+        if (pcur + 1 < pend) {
+            fallback.emplace_back(irs.size(), curr_start, pcur, pend);
+        }
+
+        switch (*pcur) {
+        {%- for ptype, _ in ptypes %}
+            {%- if ptype != main_message_name %}
+            case PType::{{ ptype }}: {
+                auto val = new {{ ptype }}();
+                {%- if ptype in partial_parse_templates[0] %}
+                if (!bs.ReadVarint(val->v)) {
+                    delete val;
+                    return false;
+                }
+                {%- elif ptype in partial_parse_templates[1] %}
+                if (!bs.ReadFixed(val->v)) {
+                    delete val;
+                    return false;
+                }
+                {%- elif ptype in partial_parse_templates[2] %}
+                uint32_t len;
+                if (!bs.ReadLen(len)) {
+                    delete val;
+                    return false;
+                }
+                uint32_t real_end = bs.curr + len;
+                if (!bs.ReadPackedVarint(val->v, std::min(len, end_of_block+MAX_EXTRA_BYTES-bs.curr))) {
+                    delete val;
+                    return false;
+                }
+                if (bs.curr < real_end) {
+                    last_tags.emplace_front(tag, bs.curr, real_end);
+                    bs.curr = real_end; // skip
+                }
+                {%- elif ptype in partial_parse_templates[3] %}
+                uint32_t len;
+                if (!bs.ReadLen(len)) { 
+                    delete val;
+                    return false;
+                }
+                uint32_t real_end = bs.curr + len;
+                if (!bs.ReadPackedFixed(val->v, std::min(len, end_of_block+MAX_EXTRA_BYTES-bs.curr))) {
+                    delete val;
+                    return false;
+                }
+                if (bs.curr < real_end) {
+                    last_tags.emplace_front(tag, bs.curr, real_end);
+                    bs.curr = real_end; // skip
+                }
+                {%- elif ptype in partial_parse_templates[4] %}
+                uint32_t len;
+                if (!bs.ReadLen(len)) {
+                    delete val;
+                    return false;
+                }
+                uint32_t real_end = bs.curr + len;
+                if (!bs.ReadString(val->v, std::min(len, end_of_block+MAX_EXTRA_BYTES-bs.curr))) {
+                    delete val;
+                    return false;
+                }
+                if (bs.curr < real_end) {
+                    last_tags.emplace_front(tag, bs.curr, real_end);
+                    bs.curr = real_end; // skip
+                }
+                {%- else %}
+                uint32_t len;
+                if (!bs.ReadLen(len)) {
+                    delete val;
+                    return false;
+                }
+                ByteStream bs_tmp(bs.buffer, bs.curr, bs.curr + len);
+                if (!bs.Skip(len)) {
+                    delete val;
+                    return false;
+                }
+                uint32_t last_tag_index = 0;
+                bool incomplete_parse = false;
+                if (!val->Parse(bs_tmp, last_tags, last_tag_index, incomplete_parse, std::min(end_of_block, bs_tmp.end))) {
+                    bs.curr = bs_tmp.curr; // help calculate visited_byte
+                    delete val;
+                    return false;
+                }
+
+                // bs_tmp hasn't been parsed completely, i.e., we have found the truncation point.
+                // furthermore, it means bs.curr >= end_of_block
+                if (incomplete_parse) {
+                    last_tags.emplace_front(tag, bs_tmp.curr, bs_tmp.end);
+                }
+                {%- endif %}
+                irs.emplace_back(tag, curr_start, bs.curr, val, pcur, pend);
+                break;
+            }
+            {%- endif %}
+        {%- endfor %}
+        }
+
+        if (bs.curr >= end_of_block) {
+            return true;
+        }
+
+        curr_start = bs.curr;
+
+        if (!bs.ReadTag(next_tag)) return false;
+
+        // fast path: skip state transition
+        if (tag == next_tag and prev_pcur == pcur) {
+            continue;
+        }
+
+        tag = next_tag;
+
+        if (!Candidates.count(*pcur) or !Candidates[*pcur].count(tag) or Candidates[*pcur][tag].empty())
+            return false;
+        auto psize = Candidates[*pcur][tag].size();
+        prev_pcur = pcur;
+        pcur = Candidates[*pcur][tag].data();
+        pend = pcur + psize;
+    }
+
+    return true;
+}
+
+void buildRangeArray(uint32_t* ls, uint32_t* rs, uint32_t len, size_t tasks) {
+    // the first thread generally is faster than other threads so it should do more work
+    // e.g., the first thread should do 1.15X work compared to other threads
+    double more_work_percent = 0.15;
+    uint32_t x = len * 1.0 / (tasks + more_work_percent);
+    ls[0] = 0;
+    rs[0] = (1.0 + more_work_percent) * x;
+    for (size_t i = 1; i < tasks; i++) {
+        ls[i] = rs[i - 1];
+        rs[i] = ls[i] + x;
+    }
+    rs[tasks - 1] = len;
+}
+
+bool {{ main_message_name }}::Parse(ByteStream& bs) {
+    parlay::timer t;
+
+    bool res = true;
+
+    size_t tasks = omp_get_max_threads();
+
+    uint32_t ls[tasks], rs[tasks];
+    buildRangeArray(ls, rs, bs.end, tasks);
+
+    std::deque<TagInfo> last_tags[tasks];
+    std::vector<IR> irs[tasks];
+    uint32_t next_start_idx;
+
+    #ifdef COUNT_VISITED_BYTES
+    uint32_t visited_byte_cnts[tasks];
+    #endif
+
+    #if !defined(COUNT_REDO_BYTES) && !defined(COUNT_VISITED_BYTES)
+    #pragma omp parallel for schedule(static, 1)
+    #endif
+    for (int task_id = 0; task_id < tasks; task_id++) {
+        uint32_t L = ls[task_id], R = rs[task_id];
+
+        if (task_id == 0) {
+            #ifdef SPP_DEBUG
+            parlay::timer t2;
+            #endif 
+
+            ByteStream bs_tmp(bs.buffer, L, bs.end);
+            uint32_t last_tag_index = 0;
+            bool incomplete_parse = false;
+
+            ASSERT_WITH_MSG(Parse(bs_tmp, last_tags[task_id], last_tag_index, incomplete_parse, R), "Parse first chunk failed");
+
+            next_start_idx = bs_tmp.curr;
+
+            #ifdef SPP_DEBUG
+            std::cout << "partial parse (task_id: " << task_id << "): " << t2.next_time() << " s\n";
+            #endif 
+
+            #ifdef COUNT_VISITED_BYTES
+            uint32_t curr_end = (last_tags[task_id].empty() ? bs_tmp.curr : last_tags[task_id].back().start);
+            visited_byte_cnts[task_id] = curr_end - L;
+            #endif
+
+            continue;
+        }
+
+        #ifdef SPP_DEBUG
+        parlay::timer t2;
+        #endif 
+        std::vector<FallbackInfo> fallback;
+        uint32_t visited_byte_cnt = 0, start;
+        for (start = L; start < R; start++) {
+            ByteStream bs_tmp(bs.buffer, start, bs.end);
+            irs[task_id].clear();
+            fallback.clear();
+
+            bool parsed = false;
+
+            while (true) {
+                uint32_t curr_start = (fallback.empty() ? bs_tmp.curr : fallback.back().start);
+                bool ok = ParsePartial(bs_tmp, irs[task_id], fallback, last_tags[task_id], R);
+                uint32_t curr_end = (last_tags[task_id].empty() ? bs_tmp.curr : last_tags[task_id].back().start);
+                visited_byte_cnt += curr_end - curr_start;
+
+                if (ok) {
+                    parsed = true;
+                    break;
+                } else if (fallback.empty()) {
+                    break;
+                }
+
+                #ifndef COUNT_VISITED_BYTES
+                if (visited_byte_cnt > R - L) {
+                    break;
+                }
+                #endif
+            }
+
+            if (parsed) {
+                break;
+            }
+
+            // try many times but still stuck in this loop
+            #ifndef COUNT_VISITED_BYTES
+            if (visited_byte_cnt > R - L) {
+                break;
+            }
+            #endif
+        }
+        #ifdef SPP_DEBUG
+        std::cout << "partial parse (task_id: " << task_id << "): " << t2.next_time() << " s\n";
+        std::cout << "task_id: " << task_id << "   start:" << start << "  L:" << L << "  R:" << R << "  chunk_size:" << R-L << " visited_byte:" << visited_byte_cnt << "\n";
+        #endif
+
+        #ifdef COUNT_VISITED_BYTES
+        visited_byte_cnts[task_id] = visited_byte_cnt;
+        #endif
+    }
+
+    #ifdef COUNT_VISITED_BYTES
+    uint32_t visited_byte_cnt_total = 0;
+    for (size_t i = 0; i < tasks; i++) {
+        visited_byte_cnt_total += visited_byte_cnts[i];
+    }
+    std::cout << "visited_byte_cnt_total: " << visited_byte_cnt_total << "\n";
+    #endif
+
+    std::cout << "speculatively_parsing_time: " << t.next_time() << " s\n";
+
+    for (uint32_t task_id = 1; task_id < tasks; task_id++) {
+        uint32_t L = ls[task_id], R = rs[task_id];
+        ByteStream bs_tmp(bs.buffer, next_start_idx, bs.end);
+        uint32_t last_tag_idx = 0, ir_idx = 0;
+        bool incomplete_parse = false, last_tags_expired = true;
+
+        #ifdef SPP_DEBUG
+        std::cout << "task_id-1: " << task_id-1 << "\n";
+        std::cout << "next_start_idx: " << next_start_idx << "\n";
+        for(auto tag : last_tags[task_id-1]) {
+            std::cout << tag.tag << ": " << tag.start << " " << tag.end << "\n";
+        }
+        #endif
+
+        ASSERT_WITH_MSG(
+            Merge(bs_tmp, last_tags[task_id - 1], last_tag_idx, irs[task_id], ir_idx, incomplete_parse, last_tags_expired, R),
+            "Merge failed");
+
+        next_start_idx = bs_tmp.curr;
+
+        if (!last_tags_expired) {
+            last_tags[task_id - 1].insert(last_tags[task_id - 1].end(),
+                                          last_tags[task_id].begin(),
+                                          last_tags[task_id].end());
+        }
+
+        std::swap(last_tags[task_id], last_tags[task_id - 1]);
+    }
+
+    ASSERT_WITH_MSG(last_tags[tasks - 1].size() == 0, "last_tags[tasks - 1] should be empty");
+
+    std::cout << "merge_validate_redo_time: " << t.next_time() << " s\n";
+
+    #ifdef COUNT_REDO_BYTES
+    std::cout << "stat_redo_bytes: " << stat_redo_bytes << "\n";
+    #endif
+
+    return res;
+}
+
+{%- for message_name, fields in messages.items() %}
+
+{{ message_name }}::{{ message_name }}() {
+    {%- for field in fields %}
+    {%- set default_value = field.cpp_type_default_value %}
+    {%- if default_value is not none %}
+    this->{{ field.name }} = {{ default_value }};
+    {%- endif %}
+    {%- endfor %}
+}
+
+{{ message_name }}::~{{ message_name }}() {
+    {%- for field in fields %}
+    {%- if field.is_embedded_message %}
+    {%- if field.is_repeated %}
+    for (auto val : this->{{ field.name }}) delete val;
+    {%- else %}
+    delete this->{{ field.name }};
+    {%- endif %}
+    {%- endif %}
+    {%- endfor %}
+}
+
+bool {{ message_name }}::Parse(ByteStream& bs, std::deque<TagInfo>& last_tags, uint32_t& last_tag_index, bool& incomplete_parse, uint32_t end_of_block) {
+    while (bs.curr < end_of_block) {
+        if (!ParseOnce(bs, last_tags, last_tag_index, incomplete_parse, end_of_block)) {
+            return false;
+        }
+    }
+
+    if (bs.curr < bs.end) {
+        incomplete_parse = true;
+    }
+
+    return true;
+}
+
+inline bool {{ message_name }}::ParseOnce(ByteStream& bs, std::deque<TagInfo>& last_tags, uint32_t& last_tag_index, bool& incomplete_parse, uint32_t end_of_block) {
+    uint32_t tag;
+    if (!bs.ReadTag(tag)) return false;
+
+    uint32_t field_id = tag >> 3;
+    uint32_t wire_type = tag & 7;
+
+    switch (field_id) {
+        {%- for field in fields %}
+        case {{ field.field_id }}:
+            {%- if field.proto_type in wiretype_to_prototype[0] %}
+            {%- if field.is_repeated %}
+            if (wire_type == 2) {
+                uint32_t len;
+                if (!bs.ReadLen(len)) return false;
+                uint32_t real_end = bs.curr + len;
+                if (!bs.ReadPackedVarint(this->{{ field.name }}, std::min(len, end_of_block+MAX_EXTRA_BYTES-bs.curr))) return false;
+                if (bs.curr < real_end) {
+                    last_tags.emplace_front(tag, bs.curr, real_end);
+                    bs.curr = real_end; // skip
+                    incomplete_parse = true;
+                }
+            } else {
+                return false;
+            }
+            {%- else %}
+            if (wire_type == 0) {
+                if (!bs.ReadVarint(this->{{ field.name }})) return false;
+            } else {
+                return false;
+            }
+            {%- endif %}
+
+            {%- elif field.proto_type in wiretype_to_prototype[1] %}
+            {%- if field.is_repeated %}
+            if (wire_type == 2) {
+                uint32_t len;
+                if (!bs.ReadLen(len)) return false;
+                uint32_t real_end = bs.curr + len;
+                if (!bs.ReadPackedFixed(this->{{ field.name }}, std::min(len, end_of_block+MAX_EXTRA_BYTES-bs.curr))) return false;
+                if (bs.curr < real_end) {
+                    last_tags.emplace_front(tag, bs.curr, real_end);
+                    bs.curr = real_end; // skip
+                    incomplete_parse = true;
+                }
+            } else {
+                return false;
+            }
+            {%- else %}
+            if (wire_type == 1) {
+                if (!bs.ReadFixed(this->{{ field.name }})) return false;
+            } else {
+                return false;
+            }
+            {%- endif %}
+
+            {%- elif field.proto_type in wiretype_to_prototype[5] %}
+            {%- if field.is_repeated %}
+            if (wire_type == 2) {
+                uint32_t len;
+                if (!bs.ReadLen(len)) return false;
+                uint32_t real_end = bs.curr + len;
+                if (!bs.ReadPackedFixed(this->{{ field.name }}, std::min(len, end_of_block+MAX_EXTRA_BYTES-bs.curr))) return false;
+                if (bs.curr < real_end) {
+                    last_tags.emplace_front(tag, bs.curr, real_end);
+                    bs.curr = real_end; // skip
+                    incomplete_parse = true;
+                }
+            } else {
+                return false;
+            }
+            {%- else %}
+            if (wire_type == 5) {
+                if (!bs.ReadFixed(this->{{ field.name }})) return false;
+            } else {
+                return false;
+            }
+            {%- endif %}
+
+            {%- elif field.proto_type in ["string", "bytes"] %}
+            if (wire_type == 2) {
+                uint32_t len;
+                if (!bs.ReadLen(len)) return false;
+                uint32_t real_end = bs.curr + len;
+                std::string val;
+                if (!bs.ReadString(val, std::min(len, end_of_block+MAX_EXTRA_BYTES-bs.curr))) return false;
+                if (bs.curr < real_end) {
+                    last_tags.emplace_front(tag, bs.curr, real_end);
+                    bs.curr = real_end; // skip
+                    incomplete_parse = true;
+                }
+                {%- if field.is_repeated %}
+                this->{{ field.name }}.push_back(std::move(val));
+                {%- else %}
+                this->{{ field.name }} = std::move(val);
+                {%- endif %}
+            } else {
+                return false;
+            }
+
+            {%- elif field.is_embedded_message %}
+            if (wire_type == 2) {
+                uint32_t len;
+                if (!bs.ReadLen(len)) return false;
+                auto val = new {{ field.proto_type }}();
+                ByteStream bs_tmp(bs.buffer, bs.curr, bs.curr + len);
+                if (!bs.Skip(len)) {
+                    delete val;
+                    return false;
+                }
+                if (!val->Parse(bs_tmp, last_tags, last_tag_index, incomplete_parse, std::min(end_of_block, bs_tmp.end))) {
+                    bs.curr = bs_tmp.curr; // help calculate visited_byte
+                    delete val;
+                    return false;
+                }
+                {%- if field.is_repeated %}
+                this->{{ field.name }}.push_back(val);
+                {%- else %}
+                this->{{ field.name }} = val;
+                {%- endif %}
+                if (incomplete_parse) {
+                    last_tags.emplace_front(tag, bs_tmp.curr, bs_tmp.end);
+                }
+            } else {
+                return false;
+            }
+            {%- endif %}
+            break;
+    {%- endfor %}
+        default:
+            return false;
+    }
+
+    return true;
+}
+
+bool {{ message_name }}::Merge(ByteStream& bs, std::deque<TagInfo>& last_tags, uint32_t& last_tag_index, std::vector<IR>& irs, uint32_t& ir_index, bool& incomplete_parse, bool& last_tags_expired, uint32_t end_of_block) {
+    if (last_tag_index < last_tags.size()) {
+        uint32_t old_last_tag_index = last_tag_index;
+        TagInfo& tag_info = last_tags[last_tag_index];
+        uint32_t field_id = tag_info.tag >> 3;
+        ByteStream bs_tmp(bs.buffer, tag_info.start, tag_info.end);
+        last_tag_index++;
+
+        switch (field_id) {
+            {%- for field in fields %}
+            {%- if field.is_embedded_message %}
+            case {{ field.field_id }}: {
+                {%- if field.is_repeated %}
+                auto val = this->{{ field.name }}.back();
+                {%- else %}
+                auto val = this->{{ field.name }};
+                {%- endif %}
+                if (!val->Merge(bs_tmp, last_tags, last_tag_index, irs, ir_index, incomplete_parse, last_tags_expired, std::min(end_of_block, bs_tmp.end)))
+                    return false;
+                break;
+            }
+            {%- elif field.proto_type in ["string", "bytes"] %}
+            case {{ field.field_id }}: {
+                #ifdef COUNT_REDO_BYTES
+                // std::cout << "redo bytes [complete partial string/bytes fields]: " << bs_tmp.end - bs_tmp.curr << "\n";
+                stat_redo_bytes += bs_tmp.end - bs_tmp.curr;
+                #endif
+                {%- if field.is_repeated %}
+                auto& val = this->{{ field.name }}.back();
+                {%- else %}
+                auto& val = this->{{ field.name }};
+                {%- endif %}
+                bs_tmp.ReadStringAppend(val);
+                break;
+            }
+            {%- elif field.is_repeated and field.proto_type in wiretype_to_prototype[1].union(wiretype_to_prototype[5]) %}
+            case {{ field.field_id }}: {
+                #ifdef COUNT_REDO_BYTES
+                // std::cout << "redo bytes [complete partial fixed fields]: " << bs_tmp.end - bs_tmp.curr << "\n";
+                stat_redo_bytes += bs_tmp.end - bs_tmp.curr;
+                #endif
+                bs_tmp.ReadPackedFixed(this->{{ field.name }});
+                break;
+            }
+            {%- elif field.is_repeated and field.proto_type in wiretype_to_prototype[0] %}
+            case {{ field.field_id }}: {
+                #ifdef COUNT_REDO_BYTES
+                // std::cout << "redo bytes [complete partial packed varint fields]: " << bs_tmp.end - bs_tmp.curr << "\n";
+                stat_redo_bytes += bs_tmp.end - bs_tmp.curr;
+                #endif
+                bs_tmp.ReadPackedVarint(this->{{ field.name }});
+                break;
+            }
+            {%- endif %}
+            {%- endfor %}
+            default:
+                ASSERT_WITH_MSG(false, "unexpected field_id: " + std::to_string(field_id));
+        }
+
+        if (incomplete_parse) {
+            last_tags[old_last_tag_index].start = bs_tmp.curr;
+            return true;
+        } else {
+            ASSERT_WITH_MSG(bs_tmp.end == bs.curr, "bs_tmp.end should be equal to bs.curr");
+            last_tags.pop_back(); 
+        }
+    }
+
+    bool redo_mode = false;
+    std::deque<TagInfo> new_last_tags;
+    uint32_t new_last_tag_index = 0;
+    uint32_t tag, field_id;
+
+    while (bs.curr < end_of_block) {
+        while (ir_index < irs.size() and irs[ir_index].start < bs.curr) {
+            #ifdef COUNT_REDO_BYTES
+            // std::cout << "skip IR: " << "index: " << ir_index << " size: " << irs.size() << " | " << irs[ir_index].start << " " << irs[ir_index].end << " " << irs[ir_index].tag << " " << int(*irs[ir_index].pcur) << "\n";
+            #endif
+            ir_index++;
+        }
+        if (ir_index < irs.size() and irs[ir_index].start == bs.curr) {
+            redo_mode = false;
+        }
+
+        // First, try to use IR
+        if (!redo_mode) {
+            if (ir_index == irs.size()) {
+                redo_mode = true;
+                #ifdef COUNT_REDO_BYTES
+                // std::cout << "entering redo mode [no more IR]: " << bs.curr << "\n";
+                #endif
+            } else {
+                tag = irs[ir_index].tag;
+                field_id = tag >> 3;
+                if (bs.curr != irs[ir_index].start or
+                    *irs[ir_index].pcur != MergeTypeCheck[PType::{{ message_name }}][tag]) {
+                    redo_mode = true;
+                    #ifdef COUNT_REDO_BYTES
+                    // std::cout << "entering redo mode [IR mismatch]: " << bs.curr << " != " << irs[ir_index].start << " or " << int(*irs[ir_index].pcur) << " != " << int(MergeTypeCheck[PType::{{ message_name }}][tag]) << "\n";
+                    #endif
+                }
+            }
+        }
+
+        // Otherwise, re-parse and skip invalid IR
+        if (redo_mode) {
+            #ifdef COUNT_REDO_BYTES
+            uint32_t curr_start = bs.curr;
+            #endif
+
+            ASSERT_WITH_MSG(ParseOnce(bs, new_last_tags, new_last_tag_index, incomplete_parse, end_of_block), "redo parse failed");
+
+            {# if (bs.curr > curr_start) {
+                std::cout << "redo range: [" << curr_start << ", " << bs.curr << ")\n";
+            } -#}
+            #ifdef COUNT_REDO_BYTES
+            uint32_t curr_end = (new_last_tags.empty() ? bs.curr : new_last_tags.back().start);
+            ASSERT_WITH_MSG(curr_end >= curr_start, "curr_end should be greater than or equal to curr_start");
+            stat_redo_bytes += curr_end - curr_start;
+            // std::cout << "redo bytes [redo partial submessage]: " << curr_end - curr_start << "  curr_start:" << curr_start << "\n";
+            #endif
+
+            if (incomplete_parse) {
+                last_tags.insert(last_tags.end(), new_last_tags.begin(),
+                                 new_last_tags.end());
+                return true;
+            } else {
+                ASSERT_WITH_MSG(new_last_tags.empty(), "new_last_tags should be empty");
+            }
+
+            continue;
+        }
+
+        switch (field_id) {
+            {%- for field in fields %}
+            case {{ field.field_id }}: {
+                {%- if field.is_embedded_message %}
+                {%- if field.is_repeated %}
+                this->{{ field.name }}.push_back(({{ field.cpp_type_single }})irs[ir_index].value);
+                {%- else %}
+                this->{{ field.name }} = ({{ field.cpp_type_single }})irs[ir_index].value;
+                {%- endif %}
+                irs[ir_index].value = nullptr;
+
+                {%- else %}
+                auto val = ({{ field.ptype }}*)irs[ir_index].value;
+                {%- if field.is_repeated %}
+                move_copy(this->{{ field.name }}, std::move(val->v));
+                {%- else %}
+                this->{{ field.name }} = val->v;
+                {%- endif %}
+
+                {%- endif %}
+                break;
+            }
+            {%- endfor %}
+            default:
+                ASSERT_WITH_MSG(false, "unexpected field_id: " + std::to_string(field_id));
+        }
+
+        bs.curr = irs[ir_index].end;
+        ir_index++;
+
+        // The value of last_tags is bound to the last IR, 
+        // if the last IR is not used then last_tags is invalid
+        if (ir_index == irs.size()) {
+            last_tags_expired = false;
+        }
+    }
+
+    if (bs.curr < bs.end) {
+        incomplete_parse = true;
+    }
+
+    return true;
+}
+
+PB::{{ message_name }}* {{ message_name }}::ConvertToPB(PB::{{ message_name }}* val) {
+    {%- for field in fields %}
+
+    {%- if field.proto_type in wiretype_to_prototype[0].union(wiretype_to_prototype[1]).union(wiretype_to_prototype[5]) %}
+    {%- if field.is_repeated %}
+    for (auto e : this->{{ field.name }}) {
+        val->add_{{ field.name.lower() }}(e);
+    }
+    {%- else %}
+    val->set_{{ field.name.lower() }}(this->{{ field.name }});
+    {%- endif %}
+
+    {%- elif field.proto_type in ["string", "bytes"] %}
+    {%- if field.is_repeated %}
+    for (auto& e : this->{{ field.name }}) {
+        val->add_{{ field.name.lower() }}(std::move(e));
+    }
+    {%- else %}
+    val->set_{{ field.name.lower() }}(std::move(this->{{ field.name }}));
+    {%- endif %}
+
+    {%- elif field.is_embedded_message %}
+    {%- if field.is_repeated %}
+    for (auto e : this->{{ field.name }}) {
+        e->ConvertToPB(val->add_{{ field.name.lower() }}());
+    }
+    {%- else %}
+    if (this->{{ field.name }} != nullptr) {
+        val->set_allocated_{{ field.name.lower() }}(this->{{ field.name }}->ConvertToPB(new PB::{{ field.proto_type }}()));
+    }
+    {%- endif %}
+    {%- endif %}
+    {%- endfor %}
+    return val;
+}
+
+{%- endfor %}
+
+
+}
+

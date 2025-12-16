@@ -1,0 +1,14 @@
+/rhome/zwang711/workspace/protobuf-decoder-parallel/mimalloc/out/release/CMakeFiles/mimalloc.dir
+/rhome/zwang711/workspace/protobuf-decoder-parallel/mimalloc/out/release/CMakeFiles/mimalloc-static.dir
+/rhome/zwang711/workspace/protobuf-decoder-parallel/mimalloc/out/release/CMakeFiles/mimalloc-obj.dir
+/rhome/zwang711/workspace/protobuf-decoder-parallel/mimalloc/out/release/CMakeFiles/mimalloc-obj-target.dir
+/rhome/zwang711/workspace/protobuf-decoder-parallel/mimalloc/out/release/CMakeFiles/mimalloc-test-api.dir
+/rhome/zwang711/workspace/protobuf-decoder-parallel/mimalloc/out/release/CMakeFiles/mimalloc-test-api-fill.dir
+/rhome/zwang711/workspace/protobuf-decoder-parallel/mimalloc/out/release/CMakeFiles/mimalloc-test-stress.dir
+/rhome/zwang711/workspace/protobuf-decoder-parallel/mimalloc/out/release/CMakeFiles/test.dir
+/rhome/zwang711/workspace/protobuf-decoder-parallel/mimalloc/out/release/CMakeFiles/edit_cache.dir
+/rhome/zwang711/workspace/protobuf-decoder-parallel/mimalloc/out/release/CMakeFiles/rebuild_cache.dir
+/rhome/zwang711/workspace/protobuf-decoder-parallel/mimalloc/out/release/CMakeFiles/list_install_components.dir
+/rhome/zwang711/workspace/protobuf-decoder-parallel/mimalloc/out/release/CMakeFiles/install.dir
+/rhome/zwang711/workspace/protobuf-decoder-parallel/mimalloc/out/release/CMakeFiles/install/local.dir
+/rhome/zwang711/workspace/protobuf-decoder-parallel/mimalloc/out/release/CMakeFiles/install/strip.dir

@@ -1,0 +1,9 @@
+third_party/*
+!third_party/mimalloc
+artifact/*
+_pycache__/
+.venv/*
+dataset/*
+.DS_Store
+*.egg-info/
+*.egg

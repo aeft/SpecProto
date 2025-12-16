@@ -1,0 +1,12 @@
+[project]
+name = "SpecProto"
+version = "0.1.0"
+description = "SpecProto"
+requires-python = ">=3.9" 
+dependencies = [
+    "jinja2>=3.1.6",
+    "matplotlib>=3.5.0,<3.9.0",
+    "numpy>=1.21.0,<2.0.0",
+    "protobuf>=6.33.1",
+    "pandas>=2.0.0,<2.2.0",
+]

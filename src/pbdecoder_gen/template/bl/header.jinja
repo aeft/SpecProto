@@ -1,0 +1,30 @@
+#ifndef __{{ proto_file_prefix.upper() }}_BL_H__
+#define __{{ proto_file_prefix.upper() }}_BL_H__
+#include <iostream>
+#include <string>
+#include <vector>
+
+#include "{{ proto_file_prefix }}.pb.h"
+#include "../../src/cpp/lib.h"
+
+namespace {{ namespace }} {
+
+{% for name in messages.keys() %}
+class {{ name }};
+{%- endfor %}
+
+{% for message_name, fields in messages.items() %}
+class {{ message_name }} {
+   public:
+    {%- for field in fields %}
+    {{ field.cpp_type }} {{ field.name }};
+    {%- endfor %}
+    {{ message_name }}();
+    ~{{ message_name }}();
+    bool Parse(ByteStream&);
+    PB::{{ message_name }}* ConvertToPB(PB::{{ message_name }}*);
+};
+{%- endfor %}
+
+}
+#endif

@@ -1,0 +1,202 @@
+#include <google/protobuf/io/coded_stream.h>
+#include <google/protobuf/io/zero_copy_stream_impl.h>
+#include <google/protobuf/message.h>
+#include <google/protobuf/text_format.h>
+#include <google/protobuf/util/message_differencer.h>
+
+#include <fstream>
+#include <iostream>
+#include <sstream>
+#include <cstdlib>
+#include <string>
+
+#include "{{ proto_file_prefix }}.pb.h"
+{%if test_bl -%}
+#include "{{ header_file_name("BL", file_path) }}"
+{%- endif %}
+{%if test_tpp -%}
+#include "{{ header_file_name("TPP", file_path) }}"
+{%- endif %}
+{%if test_spp -%}
+#include "{{ header_file_name("SPP", file_path) }}"
+{%- endif %}
+#include "../../src/cpp/get_time.h"
+
+template <typename T>
+void Compare(T* source, T* target, bool delete_source=false) {
+    if (!google::protobuf::util::MessageDifferencer::Equivalent(*source, *target)) {
+        std::cout << "MISMATCH\n";
+
+        std::string source_str, target_str;
+
+        source->SerializeToString(&source_str);
+        target->SerializeToString(&target_str);
+
+        std::cout << "source(CustomParse) size: " << source_str.size() << "\n";
+        std::cout << "target(StandardParse) size: " << target_str.size() << "\n";
+
+        std::cout << "\n";
+    } else {
+        std::cout << "MATCH\n";
+    }
+
+    if (delete_source) {
+        delete source;
+    }
+}
+
+PB::{{ main_message_name }}* StandardParse(std::string file_path) {
+    Buffer buf(file_path);
+
+    PB::{{ main_message_name }}* val = new PB::{{ main_message_name }}();
+
+    std::cout << "GG start.\n";
+    val->ParseFromArray(static_cast<void*>(buf.buffer), buf.size);
+    std::cout << "GG end.\n";
+
+    return val;
+}
+
+{% if test_bl -%}
+BL::{{ main_message_name }}* CustomParse_BL(std::string file_path) {
+    Buffer buf(file_path);
+
+    std::cout << "BL start.\n";
+    std::cout << "file path: " << file_path << " | size: " << buf.size << '\n';
+
+    ByteStream bs(buf.buffer, 0, buf.size);
+    BL::{{ main_message_name }}* val = new BL::{{ main_message_name }}();
+
+    ASSERT_WITH_MSG(val->Parse(bs), "BL parse");
+
+    std::cout << "BL done.\n";
+    return val;
+}
+{%- endif %}
+
+{% if test_tpp -%}
+TPP::{{ main_message_name }}* CustomParse_TPP(std::string file_path) {
+    Buffer buf(file_path);
+
+    std::cout << "TPP start.\n";
+    std::cout << "file path: " << file_path << " | size: " << buf.size << '\n';
+
+    ByteStream bs(buf.buffer, 0, buf.size);
+    TPP::{{ main_message_name }}* val = new TPP::{{ main_message_name }}();
+
+    omp_set_nested(1);
+    #pragma omp parallel
+    {
+        #pragma omp single
+        {
+            ASSERT_WITH_MSG(val->ParseInParallel(bs), "TPP parse");
+        }
+        #pragma omp taskwait
+    }
+
+    std::cout << "TPP done.\n";
+    return val;
+}
+{%- endif %}
+
+{% if test_spp -%}
+SPP::{{ main_message_name }}* CustomParse_SPP(std::string file_path) {
+    Buffer buf(file_path);
+
+    std::cout << "SPP start.\n";
+    std::cout << "file path: " << file_path << " | size: " << buf.size << '\n';
+
+    ByteStream bs(buf.buffer, 0, buf.size);
+    SPP::{{ main_message_name }}* val = new SPP::{{ main_message_name }}();
+    ASSERT_WITH_MSG(val->Parse(bs), "SPP parse");
+
+    std::cout << "SPP done.\n";
+    return val;
+}
+{%- endif %}
+
+
+template <typename F>
+double Benchmark(F f, std::string file_path, int runs) {
+    double total_seconds = 0;
+    for (int i = 0; i <= runs; i++) {
+        parlay::timer t;
+
+        auto* val = f(file_path);
+
+        auto elapsed_seconds = t.total_time();
+
+        delete val;
+
+        std::cout << i << "th time: " << elapsed_seconds << "s\n";
+        if (i == 0) continue;
+        total_seconds += elapsed_seconds;
+    }
+
+    std::cout << "average: " << total_seconds / runs << "s\n";
+    return total_seconds / runs;
+}
+
+#ifdef COUNT_TAG_BYTES
+uint32_t stat_tag_bytes = 0;
+#endif
+
+int main(int argc, char* argv[]) {
+    std::cout << "total threads:" << omp_get_max_threads() << std::endl;
+
+    auto args = ReadArgs(argc, argv);
+
+    ASSERT_WITH_MSG(args.file_path != "", "file path is empty");
+
+    if (args.test_mode == "C") {
+        auto truth = StandardParse(args.file_path);
+{%- if test_tpp %}
+        if (args.impl == "bl") {
+            Compare(CustomParse_BL(args.file_path)->ConvertToPB(new PB::{{ main_message_name }}()), truth, true);
+        }
+{%- endif %}
+
+{%- if test_tpp %}
+        if (args.impl == "tpp") {
+            Compare(CustomParse_TPP(args.file_path)->ConvertToPB(new PB::{{ main_message_name }}()), truth, true);
+        }
+{%- endif %}
+
+{%- if test_spp %}
+        if (args.impl == "spp") {
+            Compare(CustomParse_SPP(args.file_path)->ConvertToPB(new PB::{{ main_message_name }}()), truth, true);
+        }
+{%- endif %}
+    }
+
+    if (args.test_mode == "B") {
+        double res;
+
+        if (args.impl == "gg") {
+            res = Benchmark(StandardParse, args.file_path, args.runs);
+        }
+{%- if test_bl %}
+        if (args.impl == "bl") {
+            res = Benchmark(CustomParse_BL, args.file_path, args.runs);
+        }
+{%- endif %}
+
+{%- if test_tpp %}
+        if (args.impl == "tpp") {
+            res = Benchmark(CustomParse_TPP, args.file_path, args.runs);
+        }
+{%- endif %}
+
+{%- if test_spp %}
+        if (args.impl == "spp") {
+            res = Benchmark(CustomParse_SPP, args.file_path, args.runs);
+        }
+
+        std::cout << "execution_time: " << res << std::endl;
+{%- endif %}
+    }
+
+    #ifdef COUNT_TAG_BYTES
+    std::cout << "stat_tag_bytes: " << stat_tag_bytes << "\n";
+    #endif
+}

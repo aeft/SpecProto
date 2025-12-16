@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package PB;
+
+message WikiSystem {
+  int32 system_id = 1;
+  repeated WikiSite sites = 2;
+  repeated User registered_users = 3;
+}
+
+message WikiSite {
+  int32 site_id = 1;
+  string site_name = 2;
+  repeated Page pages = 3;
+  User admin = 4;
+  repeated uint64 daily_visits = 5;
+  bool is_public = 6;
+}
+
+message Page {
+  int32 page_id = 1;
+  repeated Section sections = 2;
+  uint32 like_count = 3;
+  repeated User contributors = 4;
+  int64 created_at = 5;
+  int64 updated_at = 6;
+}
+
+message User {
+  int32 id = 1;
+  string name = 2;
+  int64 reputation = 3;
+}
+
+message Attachment {
+  int32 attachment_id = 1;
+  string file_name = 2;
+  uint64 file_size = 3;
+  string file_type = 4;
+  int64 created_at = 5;
+  double quality_score = 6;
+}
+
+message Section {
+  int32 section_id = 1;
+  string heading = 2;
+  string body = 3;
+  repeated Attachment attachments = 4;
+  repeated Section sub_sections = 5;
+}

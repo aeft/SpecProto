@@ -1,0 +1,76 @@
+syntax = "proto3";
+
+package PB;
+
+message Product {
+  string category = 1;
+  string format = 2;
+  string maxId = 3;
+  string nextPage = 4;
+  repeated Item items = 5;
+}
+
+message Item {
+  string addToCartUrl = 1;
+  string affiliateAddToCartUrl = 2;
+  string age = 3;
+  repeated Entry attributes = 4;
+  bool availableOnline = 5;
+  BestMarketplacePrice bestMarketplacePrice = 6;
+  string brandName = 7;
+  bool bundle = 8;
+  string categoryNode = 9;
+  string categoryPath = 10;
+  bool clearance = 11;
+  string color = 12;
+  string customerRating = 13;
+  string customerRatingImage = 14;
+  bool freeShipToStore = 15;
+  bool freeShippingOver50Dollars = 16;
+  bool freight = 17;
+  string gender = 18;
+  string isbn = 19;
+  int64 itemId = 20;
+  string largeImage = 21;
+  string longDescription = 22;
+  bool marketplace = 23;
+  int64 maxItemsInOrder = 24;
+  string mediumImage = 25;
+  string modelNumber = 26;
+  double msrp = 27;
+  string name = 28;
+  bool ninetySevenCentShipping = 29;
+  int64 numReviews = 30;
+  double overnightShippingRate = 31;
+  int64 parentItemId = 32;
+  bool preOrder = 33;
+  string productTrackingUrl = 34;
+  string productUrl = 35;
+  bool rollBack = 36;
+  double salePrice = 37;
+  string sellerInfo = 38;
+  bool shipToStore = 39;
+  string shortDescription = 40;
+  string size = 41;
+  bool specialBuy = 42;
+  double standardShipRate = 43;
+  string stock = 44;
+  string thumbnailImage = 45;
+  double twoThreeDayShippingRate = 46;
+  string upc = 47;
+  repeated int64 variants = 48;
+}
+
+message Entry {
+  string key = 1;
+  string value = 2;
+}
+
+message BestMarketplacePrice {
+  bool availableOnline = 1;
+  bool clearance = 2;
+  double price = 3;
+  string sellerInfo = 4;
+  double standardShipRate = 5;
+  double twoThreeDayShippingRate = 6;
+}

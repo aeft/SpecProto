@@ -1,0 +1,362 @@
+syntax = "proto3";
+
+package PB;
+
+message Root { repeated Branch f1 = 1; }
+
+message Branch {
+  int32 f1 = 1;
+  string f2 = 2;
+  repeated SubBranch f3 = 3;
+}
+
+message SubBranch { repeated Leaf f1 = 1; }
+
+message Leaf {
+  Msg1 f1 = 1;
+  Msg2 f2 = 2;
+  Msg3 f3 = 3;
+  Msg4 f4 = 4;
+  Msg5 f5 = 5;
+  Msg6 f6 = 6;
+  Msg7 f7 = 7;
+  Msg8 f8 = 8;
+  Msg9 f9 = 9;
+  Msg10 f10 = 10;
+  Msg11 f11 = 11;
+  Msg12 f12 = 12;
+  Msg13 f13 = 13;
+  Msg14 f14 = 14;
+  Msg15 f15 = 15;
+  Msg16 f16 = 16;
+  Msg17 f17 = 17;
+  Msg18 f18 = 18;
+  Msg19 f19 = 19;
+  Msg20 f20 = 20;
+  Msg21 f21 = 21;
+  Msg22 f22 = 22;
+  Msg23 f23 = 23;
+  Msg24 f24 = 24;
+  Msg25 f25 = 25;
+  Msg26 f26 = 26;
+  Msg27 f27 = 27;
+  Msg28 f28 = 28;
+  Msg29 f29 = 29;
+  Msg30 f30 = 30;
+  Msg31 f31 = 31;
+  Msg32 f32 = 32;
+  Msg33 f33 = 33;
+  Msg34 f34 = 34;
+  Msg35 f35 = 35;
+  Msg36 f36 = 36;
+  Msg37 f37 = 37;
+  Msg38 f38 = 38;
+  Msg39 f39 = 39;
+  Msg40 f40 = 40;
+  Msg41 f41 = 41;
+  Msg42 f42 = 42;
+  Msg43 f43 = 43;
+  Msg44 f44 = 44;
+  Msg45 f45 = 45;
+  Msg46 f46 = 46;
+  Msg47 f47 = 47;
+  Msg48 f48 = 48;
+  Msg49 f49 = 49;
+  Msg50 f50 = 50;
+  Msg51 f51 = 51;
+  Msg52 f52 = 52;
+  Msg53 f53 = 53;
+  Msg54 f54 = 54;
+  Msg55 f55 = 55;
+  Msg56 f56 = 56;
+  Msg57 f57 = 57;
+}
+
+message Msg1 {
+  int32 f1 = 1;
+  string f2 = 2;
+  Msg2 f3 = 3;
+  Msg4 f4 = 4;
+  Msg8 f8 = 5;
+}
+
+message Msg2 {
+  int64 f1 = 1;
+  repeated string f2 = 2;
+  bool f3 = 3;
+  Msg8 f4 = 4;
+}
+
+message Msg3 {
+  string f1 = 1;
+  float f2 = 2;
+}
+
+message Msg4 {
+  bool f1 = 1;
+  string f2 = 2;
+  int32 f3 = 3;
+}
+
+message Msg5 {
+  repeated int32 f1 = 1;
+  string f2 = 2;
+}
+
+message Msg6 {
+  double f1 = 1;
+  bool f2 = 2;
+}
+
+message Msg7 {
+  int32 f1 = 1;
+  string f2 = 2;
+  repeated float f3 = 3;
+}
+
+message Msg8 {
+  string f1 = 1;
+  int64 f2 = 2;
+  Msg16 f3 = 3;
+}
+
+message Msg9 {
+  bool f1 = 1;
+  repeated string f2 = 2;
+}
+
+message Msg10 {
+  string f1 = 1;
+  string f2 = 2;
+}
+
+message Msg11 {
+  int32 f1 = 1;
+  string f2 = 2;
+  bool f3 = 3;
+}
+
+message Msg12 {
+  repeated int64 f1 = 1;
+  double f2 = 2;
+}
+
+message Msg13 {
+  string f1 = 1;
+  int32 f2 = 2;
+}
+
+message Msg14 {
+  int64 f1 = 1;
+  repeated bool f2 = 2;
+}
+
+message Msg15 {
+  float f1 = 1;
+  string f2 = 2;
+}
+
+message Msg16 {
+  bool f1 = 1;
+  int32 f2 = 2;
+}
+
+message Msg17 {
+  string f1 = 1;
+  string f2 = 2;
+  bool f3 = 3;
+}
+
+message Msg18 {
+  int32 f1 = 1;
+  string f2 = 2;
+}
+
+message Msg19 {
+  repeated string f1 = 1;
+  string f2 = 2;
+}
+
+message Msg20 {
+  double f1 = 1;
+  string f2 = 2;
+}
+
+message Msg21 {
+  int32 f1 = 1;
+  string f2 = 2;
+  repeated int32 f3 = 3;
+}
+
+message Msg22 {
+  string f1 = 1;
+  bool f2 = 2;
+}
+
+message Msg23 {
+  int64 f1 = 1;
+  repeated string f2 = 2;
+}
+
+message Msg24 {
+  bool f1 = 1;
+  string f2 = 2;
+}
+
+message Msg25 {
+  string f1 = 1;
+  int32 f2 = 2;
+  bool f3 = 3;
+}
+
+message Msg26 {
+  repeated string f1 = 1;
+  int32 f2 = 2;
+}
+
+message Msg27 {
+  string f1 = 1;
+  repeated int32 f2 = 2;
+}
+
+message Msg28 {
+  bool f1 = 1;
+  string f2 = 2;
+}
+
+message Msg29 {
+  int32 f1 = 1;
+  string f2 = 2;
+  bool f3 = 3;
+}
+
+message Msg30 {
+  string f1 = 1;
+  double f2 = 2;
+}
+
+message Msg31 {
+  repeated int32 f1 = 1;
+  string f2 = 2;
+}
+
+message Msg32 {
+  bool f1 = 1;
+  int64 f2 = 2;
+}
+
+message Msg33 {
+  string f1 = 1;
+  repeated string f2 = 2;
+}
+
+message Msg34 {
+  int32 f1 = 1;
+  string f2 = 2;
+  bool f3 = 3;
+}
+
+message Msg35 {
+  string f1 = 1;
+  int32 f2 = 2;
+}
+
+message Msg36 {
+  bool f1 = 1;
+  repeated string f2 = 2;
+}
+
+message Msg37 {
+  double f1 = 1;
+  double f2 = 2;
+  string f3 = 3;
+}
+
+message Msg38 {
+  int64 f1 = 1;
+  bool f2 = 2;
+}
+
+message Msg39 {
+  string f1 = 1;
+  repeated int32 f2 = 2;
+}
+
+message Msg40 {
+  bool f1 = 1;
+  double f2 = 2;
+}
+
+message Msg41 {
+  string f1 = 1;
+  int32 f2 = 2;
+  bool f3 = 3;
+}
+
+message Msg42 {
+  repeated string f1 = 1;
+  bool f2 = 2;
+}
+
+message Msg43 {
+  int32 f1 = 1;
+  string f2 = 2;
+  repeated bool f3 = 3;
+}
+
+message Msg44 {
+  bool f1 = 1;
+  string f2 = 2;
+}
+
+message Msg45 {
+  int64 f1 = 1;
+  repeated float f2 = 2;
+}
+
+message Msg46 {
+  string f1 = 1;
+  bool f2 = 2;
+}
+
+message Msg47 {
+  int32 f1 = 1;
+  string f2 = 2;
+  bool f3 = 3;
+}
+
+message Msg48 {
+  repeated int32 f1 = 1;
+  string f2 = 2;
+}
+
+message Msg49 {
+  bool f1 = 1;
+  string f2 = 2;
+}
+
+message Msg50 {
+  int64 f1 = 1;
+  repeated string f2 = 2;
+  bool f3 = 3;
+}
+
+message Msg51 {
+  string f1 = 1;
+  string f2 = 2;
+}
+
+message Msg52 { int64 f1 = 1; }
+
+message Msg53 { bool f1 = 99; }
+
+message Msg54 { repeated double f1 = 1; }
+
+message Msg55 { repeated float f1 = 1; }
+
+message Msg56 {
+  int32 f1 = 1;
+  int64 f2 = 9;
+}
+
+message Msg57 { repeated bool f1 = 1; }
