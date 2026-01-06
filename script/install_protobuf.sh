@@ -32,6 +32,7 @@ if [ ! -f "$ABSEIL_PREFIX/lib/cmake/absl/abslConfig.cmake" ]; then
   cmake -S . -B build \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX="$ABSEIL_PREFIX" \
+	-DCMAKE_INSTALL_LIBDIR=lib \
     -DCMAKE_CXX_STANDARD=17 \
     -DABSL_PROPAGATE_CXX_STD=ON \
     -DABSL_ENABLE_INSTALL=ON
@@ -57,6 +58,7 @@ cd "protobuf"
 cmake -S . -B build \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_INSTALL_PREFIX="$PREFIX" \
+  -DCMAKE_INSTALL_LIBDIR=lib \
   -Dprotobuf_BUILD_TESTS=OFF \
   -Dprotobuf_ABSL_PROVIDER=package \
   -DCMAKE_PREFIX_PATH="$ABSEIL_PREFIX"

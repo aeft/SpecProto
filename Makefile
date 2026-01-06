@@ -70,12 +70,12 @@ build: clean
 	artifact/generated/$(PREFIX).test.cpp \
 	-I$(PROTOBUF_DIR)/include \
 	-I$(ABSEIL_DIR)/include \
-	-L$(PROTOBUF_DIR)/lib64 \
+	-L$(PROTOBUF_DIR)/lib \
 	-Wl,--start-group \
 		-lprotobuf \
 		-lutf8_range \
 		-lutf8_validity \
-		$(ABSEIL_DIR)/lib64/libabsl_*.a \
+		$(ABSEIL_DIR)/lib/libabsl_*.a \
 	-Wl,--end-group \
 	-lpthread -fopenmp -O3 \
 	$(DEFINE) \
